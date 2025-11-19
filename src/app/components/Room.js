@@ -327,7 +327,7 @@ const Room = ({ roomCode, userName, onLeave }) => {
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">
               <div className="auth-org-logo">
-                <span className="text-5xl font-black bg-gradient-to-r from-slate-800 via-orange-600 to-slate-700 bg-clip-text text-transparent tracking-wide drop-shadow-md" aria-label="SkyPoint logo">SkyPoint</span>
+                <span className="text-5xl font-black bg-gradient-to-r from-blue-600 via-orange-500 to-blue-700 bg-clip-text text-transparent tracking-wide drop-shadow-md" aria-label="SkyPoint logo">SkyPoint</span>
               </div>
               <div>
                 <h1 className="text-2xl font-semibold text-neutral-700">Planning Session</h1>

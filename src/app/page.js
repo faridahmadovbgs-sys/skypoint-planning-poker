@@ -64,12 +64,12 @@ export default function Home() {
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <h1 className="text-6xl font-black mb-2 drop-shadow-2xl">
-            <span className="bg-gradient-to-r from-slate-800 via-orange-600 to-slate-700 bg-clip-text text-transparent tracking-wide">
+            <span className="bg-gradient-to-r from-blue-600 via-orange-500 to-blue-700 bg-clip-text text-transparent tracking-wide">
               SkyPoint
             </span>
           </h1>
           <p className="text-neutral-600 text-lg font-semibold">Agile Estimation for Development Teams</p>
-          <div className="w-20 h-1.5 bg-gradient-to-r from-orange-500 via-orange-400 to-orange-500 mx-auto mt-4 rounded-full shadow-lg"></div>
+          <div className="w-20 h-1.5 bg-gradient-to-r from-blue-500 via-orange-400 to-blue-500 mx-auto mt-4 rounded-full shadow-lg"></div>
         </div>
 
         <div className="bg-white rounded-lg shadow-xl p-8 space-y-6 border border-slate-200">
