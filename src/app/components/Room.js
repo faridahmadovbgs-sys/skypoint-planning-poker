@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
+import { ref, onValue, set, push, remove } from 'firebase/database';
+import { database } from '../lib/firebase';
 import EstimationCard from "./PokerCard";
 import VotingSession from "./VotingSession";
 
@@ -15,50 +17,65 @@ const Room = ({ roomCode, userName, onLeave }) => {
   const [currentStory, setCurrentStory] = useState('');
   const [votingResults, setVotingResults] = useState([]);
 
-  // Session management
-  const [sessionData, setSessionData] = useState({
-    users: [],
-    currentStory: '',
-    isRevealed: false,
-    lastUpdate: Date.now()
-  });
+  // Firebase references
+  const roomRef = ref(database, `rooms/${roomCode}`);
+  const usersRef = ref(database, `rooms/${roomCode}/users`);
+  const sessionRef = ref(database, `rooms/${roomCode}/session`);
 
-  // Initialize user and add to session
+  // Firebase real-time synchronization
   useEffect(() => {
+    // Add current user to Firebase
     const currentUser = {
       id: currentUserId,
       name: userName,
       hasVoted: false,
       selectedCard: null,
       isObserver: false,
+      joinedAt: Date.now(),
       lastSeen: Date.now()
     };
     
-    // Add current user to the session
-    setUsers(prev => {
-      // Remove any existing user with same name and add current user
-      const filtered = prev.filter(u => u.name !== userName);
-      return [...filtered, currentUser];
+    const userRef = ref(database, `rooms/${roomCode}/users/${currentUserId}`);
+    set(userRef, currentUser);
+    
+    // Listen for users changes
+    const unsubscribeUsers = onValue(usersRef, (snapshot) => {
+      const usersData = snapshot.val();
+      if (usersData) {
+        const usersArray = Object.keys(usersData).map(key => ({
+          ...usersData[key],
+          id: key
+        }));
+        setUsers(usersArray);
+      } else {
+        setUsers([currentUser]);
+      }
     });
     
-    // Demo: Add a few other users to show multi-user functionality
-    // In a real app, these would come from other actual users
-    setTimeout(() => {
-      const demoUsers = [
-        { id: 'demo1', name: 'Alice (Demo)', hasVoted: false, selectedCard: null, isObserver: false, lastSeen: Date.now() },
-        { id: 'demo2', name: 'Bob (Demo)', hasVoted: false, selectedCard: null, isObserver: false, lastSeen: Date.now() },
-      ];
-      
-      setUsers(prev => {
-        // Only add demo users if we don't have multiple real users
-        const realUsers = prev.filter(u => !u.name.includes('Demo'));
-        if (realUsers.length === 1) {
-          return [...realUsers, ...demoUsers];
-        }
-        return prev;
-      });
-    }, 2000);
-  }, [currentUserId, userName]);
+    // Listen for session changes (story, reveal state)
+    const unsubscribeSession = onValue(sessionRef, (snapshot) => {
+      const sessionData = snapshot.val();
+      if (sessionData) {
+        setCurrentStory(sessionData.currentStory || '');
+        setIsRevealed(sessionData.isRevealed || false);
+      }
+    });
+    
+    // Update user's last seen timestamp periodically
+    const heartbeatInterval = setInterval(() => {
+      const heartbeatRef = ref(database, `rooms/${roomCode}/users/${currentUserId}/lastSeen`);
+      set(heartbeatRef, Date.now());
+    }, 30000); // Update every 30 seconds
+    
+    // Cleanup on unmount
+    return () => {
+      unsubscribeUsers();
+      unsubscribeSession();
+      clearInterval(heartbeatInterval);
+      // Remove user from Firebase when leaving
+      remove(ref(database, `rooms/${roomCode}/users/${currentUserId}`));
+    };
+  }, [currentUserId, userName, roomCode]);
 
   // Calculate if all votes are in
   const allVotesIn = users.filter(u => !u.isObserver).every(user => user.hasVoted);
@@ -117,7 +134,9 @@ const Room = ({ roomCode, userName, onLeave }) => {
 
 
   const handleReveal = () => {
-    setIsRevealed(true);
+    // Update reveal state in Firebase
+    set(ref(database, `rooms/${roomCode}/session/isRevealed`), true);
+    
     const results = users
       .filter(user => !user.isObserver && user.hasVoted)
       .map(user => ({
@@ -128,14 +147,26 @@ const Room = ({ roomCode, userName, onLeave }) => {
   };
 
   const handleReset = () => {
-    setIsRevealed(false);
     setSelectedCard(null);
     setVotingResults([]);
-    setUsers(prev => prev.map(user => ({
-      ...user,
-      hasVoted: false,
-      selectedCard: null
-    })));
+    
+    // Reset session state in Firebase
+    set(ref(database, `rooms/${roomCode}/session`), {
+      isRevealed: false,
+      currentStory: currentStory
+    });
+    
+    // Reset all users' votes in Firebase
+    users.forEach(user => {
+      if (user.id) {
+        set(ref(database, `rooms/${roomCode}/users/${user.id}`), {
+          ...user,
+          hasVoted: false,
+          selectedCard: null,
+          lastSeen: Date.now()
+        });
+      }
+    });
   };
 
   const handleStoryChange = (newStory) => {
@@ -315,7 +346,10 @@ const Room = ({ roomCode, userName, onLeave }) => {
           <div>
             <VotingSession
               currentStory={currentStory}
-                      onStoryChange={setCurrentStory}
+                      onStoryChange={(story) => {
+                        setCurrentStory(story);
+                        set(ref(database, `rooms/${roomCode}/session/currentStory`), story);
+                      }}
               onReveal={handleReveal}
               onReset={handleReset}
               isRevealed={isRevealed}
