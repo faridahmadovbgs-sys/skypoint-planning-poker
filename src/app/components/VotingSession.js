@@ -179,7 +179,7 @@ const VotingSession = ({
                 ) : (
                   <>
                     <p className="text-sm font-medium text-neutral-800 pr-2">
-                      {story.title || `Item #${story.id}`}
+                      {story.title || `Story ${story.id}`}
                     </p>
                     {story.isCompleted && (
                       <p className="text-xs text-green-600 mt-1">
