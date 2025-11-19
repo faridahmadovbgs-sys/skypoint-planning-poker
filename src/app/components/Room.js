@@ -15,17 +15,59 @@ const Room = ({ roomCode, userName, onLeave }) => {
   const [currentStory, setCurrentStory] = useState('');
   const [votingResults, setVotingResults] = useState([]);
 
-  // Initialize current user
+  // Session storage keys
+  const sessionKey = `skypoint_session_${roomCode}`;
+  const usersKey = `skypoint_users_${roomCode}`;
+  const storyKey = `skypoint_story_${roomCode}`;
+  const revealKey = `skypoint_reveal_${roomCode}`;
+
+  // Initialize session and sync users
   useEffect(() => {
-    const currentUser = {
-      id: currentUserId,
-      name: userName,
-      hasVoted: false,
-      selectedCard: null,
-      isObserver: false
-    };
-    setUsers([currentUser]);
-  }, [currentUserId, userName]);
+    // Load existing session data
+    const existingUsers = JSON.parse(localStorage.getItem(usersKey) || '[]');
+    const existingStory = localStorage.getItem(storyKey) || '';
+    const existingReveal = localStorage.getItem(revealKey) === 'true';
+    
+    // Check if current user already exists
+    const existingUser = existingUsers.find(u => u.name === userName);
+    
+    let updatedUsers;
+    if (existingUser) {
+      // User rejoining - update their ID
+      updatedUsers = existingUsers.map(u => 
+        u.name === userName ? { ...u, id: currentUserId } : u
+      );
+    } else {
+      // New user joining
+      const newUser = {
+        id: currentUserId,
+        name: userName,
+        hasVoted: false,
+        selectedCard: null,
+        isObserver: false
+      };
+      updatedUsers = [...existingUsers, newUser];
+    }
+    
+    // Update state and storage
+    setUsers(updatedUsers);
+    setCurrentStory(existingStory);
+    setIsRevealed(existingReveal);
+    localStorage.setItem(usersKey, JSON.stringify(updatedUsers));
+    
+    // Set up polling for real-time updates
+    const pollInterval = setInterval(() => {
+      const latestUsers = JSON.parse(localStorage.getItem(usersKey) || '[]');
+      const latestStory = localStorage.getItem(storyKey) || '';
+      const latestReveal = localStorage.getItem(revealKey) === 'true';
+      
+      setUsers(latestUsers);
+      setCurrentStory(latestStory);
+      setIsRevealed(latestReveal);
+    }, 1000);
+    
+    return () => clearInterval(pollInterval);
+  }, [currentUserId, userName, roomCode]);
 
   // Calculate if all votes are in
   const allVotesIn = users.filter(u => !u.isObserver).every(user => user.hasVoted);
@@ -85,6 +127,8 @@ const Room = ({ roomCode, userName, onLeave }) => {
 
   const handleReveal = () => {
     setIsRevealed(true);
+    localStorage.setItem(revealKey, 'true');
+    
     const results = users
       .filter(user => !user.isObserver && user.hasVoted)
       .map(user => ({
@@ -98,11 +142,16 @@ const Room = ({ roomCode, userName, onLeave }) => {
     setIsRevealed(false);
     setSelectedCard(null);
     setVotingResults([]);
-    setUsers(prev => prev.map(user => ({
+    
+    const resetUsers = users.map(user => ({
       ...user,
       hasVoted: false,
       selectedCard: null
-    })));
+    }));
+    
+    setUsers(resetUsers);
+    localStorage.setItem(usersKey, JSON.stringify(resetUsers));
+    localStorage.removeItem(revealKey);
   };
 
   const handleStoryChange = (newStory) => {
@@ -282,7 +331,10 @@ const Room = ({ roomCode, userName, onLeave }) => {
           <div>
             <VotingSession
               currentStory={currentStory}
-              onStoryChange={handleStoryChange}
+                      onStoryChange={(story) => {
+          setCurrentStory(story);
+          localStorage.setItem(storyKey, story);
+        }}
               onReveal={handleReveal}
               onReset={handleReset}
               isRevealed={isRevealed}
