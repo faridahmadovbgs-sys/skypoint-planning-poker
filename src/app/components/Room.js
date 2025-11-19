@@ -135,12 +135,22 @@ const Room = ({ roomCode, userName, onLeave }) => {
     const handleKeyDown = (e) => {
       // Ignore keyboard shortcuts when user is typing in input fields
       const activeElement = document.activeElement;
-      if (activeElement && (
+      const isTyping = activeElement && (
         activeElement.tagName === 'INPUT' || 
         activeElement.tagName === 'TEXTAREA' || 
         activeElement.contentEditable === 'true' ||
-        activeElement.getAttribute('role') === 'textbox'
-      )) {
+        activeElement.contentEditable === true ||
+        activeElement.getAttribute('role') === 'textbox' ||
+        activeElement.type === 'text' ||
+        activeElement.type === 'textarea' ||
+        // Also check if it's inside a form or has input-related classes
+        activeElement.closest('input, textarea, [contenteditable], [role="textbox"]')
+      );
+
+      console.log('Keydown:', e.key, 'Active element:', activeElement?.tagName, 'Is typing:', isTyping);
+      
+      if (isTyping) {
+        console.log('Ignoring shortcut - user is typing');
         return; // Don't handle shortcuts when typing
       }
 
@@ -149,6 +159,8 @@ const Room = ({ roomCode, userName, onLeave }) => {
       
       // Number keys 0-9 for quick card selection
       if (e.key >= '0' && e.key <= '9' && !isRevealed) {
+        e.preventDefault(); // Prevent default behavior
+        console.log('Executing card selection for key:', e.key);
         const cardIndex = parseInt(e.key);
         if (cardIndex < cardValues.length) {
           handleCardSelect(cardValues[cardIndex]);
@@ -157,16 +169,19 @@ const Room = ({ roomCode, userName, onLeave }) => {
       // 'R' key for reveal (when all votes are in)
       if (e.key.toLowerCase() === 'r' && !isRevealed && currentAllVotesIn) {
         e.preventDefault();
+        console.log('Executing reveal');
         handleReveal();
       }
       // 'N' key for new round (when revealed)
       if (e.key.toLowerCase() === 'n' && isRevealed) {
         e.preventDefault();
+        console.log('Executing new round');
         handleReset();
       }
       // 'C' key to clear vote
       if (e.key.toLowerCase() === 'c' && selectedCard && !isRevealed) {
         e.preventDefault();
+        console.log('Executing clear vote');
         setSelectedCard(null);
         setUsers(prev => prev.map(user => 
           user.id === currentUserId 
