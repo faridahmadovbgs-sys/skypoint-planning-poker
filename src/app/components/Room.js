@@ -133,6 +133,17 @@ const Room = ({ roomCode, userName, onLeave }) => {
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Ignore keyboard shortcuts when user is typing in input fields
+      const activeElement = document.activeElement;
+      if (activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA' || 
+        activeElement.contentEditable === 'true' ||
+        activeElement.getAttribute('role') === 'textbox'
+      )) {
+        return; // Don't handle shortcuts when typing
+      }
+
       // Calculate allVotesIn inside the handler to avoid dependency issues
       const currentAllVotesIn = users.filter(u => !u.isObserver).every(user => user.hasVoted);
       
