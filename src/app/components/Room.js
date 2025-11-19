@@ -15,59 +15,50 @@ const Room = ({ roomCode, userName, onLeave }) => {
   const [currentStory, setCurrentStory] = useState('');
   const [votingResults, setVotingResults] = useState([]);
 
-  // Session storage keys
-  const sessionKey = `skypoint_session_${roomCode}`;
-  const usersKey = `skypoint_users_${roomCode}`;
-  const storyKey = `skypoint_story_${roomCode}`;
-  const revealKey = `skypoint_reveal_${roomCode}`;
+  // Session management
+  const [sessionData, setSessionData] = useState({
+    users: [],
+    currentStory: '',
+    isRevealed: false,
+    lastUpdate: Date.now()
+  });
 
-  // Initialize session and sync users
+  // Initialize user and add to session
   useEffect(() => {
-    // Load existing session data
-    const existingUsers = JSON.parse(localStorage.getItem(usersKey) || '[]');
-    const existingStory = localStorage.getItem(storyKey) || '';
-    const existingReveal = localStorage.getItem(revealKey) === 'true';
+    const currentUser = {
+      id: currentUserId,
+      name: userName,
+      hasVoted: false,
+      selectedCard: null,
+      isObserver: false,
+      lastSeen: Date.now()
+    };
     
-    // Check if current user already exists
-    const existingUser = existingUsers.find(u => u.name === userName);
+    // Add current user to the session
+    setUsers(prev => {
+      // Remove any existing user with same name and add current user
+      const filtered = prev.filter(u => u.name !== userName);
+      return [...filtered, currentUser];
+    });
     
-    let updatedUsers;
-    if (existingUser) {
-      // User rejoining - update their ID
-      updatedUsers = existingUsers.map(u => 
-        u.name === userName ? { ...u, id: currentUserId } : u
-      );
-    } else {
-      // New user joining
-      const newUser = {
-        id: currentUserId,
-        name: userName,
-        hasVoted: false,
-        selectedCard: null,
-        isObserver: false
-      };
-      updatedUsers = [...existingUsers, newUser];
-    }
-    
-    // Update state and storage
-    setUsers(updatedUsers);
-    setCurrentStory(existingStory);
-    setIsRevealed(existingReveal);
-    localStorage.setItem(usersKey, JSON.stringify(updatedUsers));
-    
-    // Set up polling for real-time updates
-    const pollInterval = setInterval(() => {
-      const latestUsers = JSON.parse(localStorage.getItem(usersKey) || '[]');
-      const latestStory = localStorage.getItem(storyKey) || '';
-      const latestReveal = localStorage.getItem(revealKey) === 'true';
+    // Demo: Add a few other users to show multi-user functionality
+    // In a real app, these would come from other actual users
+    setTimeout(() => {
+      const demoUsers = [
+        { id: 'demo1', name: 'Alice (Demo)', hasVoted: false, selectedCard: null, isObserver: false, lastSeen: Date.now() },
+        { id: 'demo2', name: 'Bob (Demo)', hasVoted: false, selectedCard: null, isObserver: false, lastSeen: Date.now() },
+      ];
       
-      setUsers(latestUsers);
-      setCurrentStory(latestStory);
-      setIsRevealed(latestReveal);
-    }, 1000);
-    
-    return () => clearInterval(pollInterval);
-  }, [currentUserId, userName, roomCode]);
+      setUsers(prev => {
+        // Only add demo users if we don't have multiple real users
+        const realUsers = prev.filter(u => !u.name.includes('Demo'));
+        if (realUsers.length === 1) {
+          return [...realUsers, ...demoUsers];
+        }
+        return prev;
+      });
+    }, 2000);
+  }, [currentUserId, userName]);
 
   // Calculate if all votes are in
   const allVotesIn = users.filter(u => !u.isObserver).every(user => user.hasVoted);
@@ -127,8 +118,6 @@ const Room = ({ roomCode, userName, onLeave }) => {
 
   const handleReveal = () => {
     setIsRevealed(true);
-    localStorage.setItem(revealKey, 'true');
-    
     const results = users
       .filter(user => !user.isObserver && user.hasVoted)
       .map(user => ({
@@ -142,16 +131,11 @@ const Room = ({ roomCode, userName, onLeave }) => {
     setIsRevealed(false);
     setSelectedCard(null);
     setVotingResults([]);
-    
-    const resetUsers = users.map(user => ({
+    setUsers(prev => prev.map(user => ({
       ...user,
       hasVoted: false,
       selectedCard: null
-    }));
-    
-    setUsers(resetUsers);
-    localStorage.setItem(usersKey, JSON.stringify(resetUsers));
-    localStorage.removeItem(revealKey);
+    })));
   };
 
   const handleStoryChange = (newStory) => {
@@ -331,10 +315,7 @@ const Room = ({ roomCode, userName, onLeave }) => {
           <div>
             <VotingSession
               currentStory={currentStory}
-                      onStoryChange={(story) => {
-          setCurrentStory(story);
-          localStorage.setItem(storyKey, story);
-        }}
+                      onStoryChange={setCurrentStory}
               onReveal={handleReveal}
               onReset={handleReset}
               isRevealed={isRevealed}
