@@ -22,9 +22,8 @@ const Room = ({ roomCode, userName, onLeave }) => {
   const usersRef = ref(database, `rooms/${roomCode}/users`);
   const sessionRef = ref(database, `rooms/${roomCode}/session`);
 
-  // Firebase real-time synchronization
+  // Firebase real-time synchronization with fallback
   useEffect(() => {
-    // Add current user to Firebase
     const currentUser = {
       id: currentUserId,
       name: userName,
@@ -34,47 +33,86 @@ const Room = ({ roomCode, userName, onLeave }) => {
       joinedAt: Date.now(),
       lastSeen: Date.now()
     };
-    
-    const userRef = ref(database, `rooms/${roomCode}/users/${currentUserId}`);
-    set(userRef, currentUser);
-    
-    // Listen for users changes
-    const unsubscribeUsers = onValue(usersRef, (snapshot) => {
-      const usersData = snapshot.val();
-      if (usersData) {
-        const usersArray = Object.keys(usersData).map(key => ({
-          ...usersData[key],
-          id: key
-        }));
-        setUsers(usersArray);
-      } else {
+
+    if (!database) {
+      console.log('Firebase not available, using demo mode');
+      // Fallback to local state
+      setUsers([currentUser]);
+      
+      // Add demo users to show functionality
+      setTimeout(() => {
+        const demoUsers = [
+          { id: 'demo1', name: 'Alice (Demo)', hasVoted: false, selectedCard: null, isObserver: false },
+          { id: 'demo2', name: 'Bob (Demo)', hasVoted: false, selectedCard: null, isObserver: false },
+        ];
+        setUsers(prev => [...prev, ...demoUsers]);
+      }, 2000);
+      
+      return;
+    }
+
+    // Firebase integration
+    try {
+      const userRef = ref(database, `rooms/${roomCode}/users/${currentUserId}`);
+      set(userRef, currentUser).catch(error => {
+        console.warn('Firebase set failed, using demo mode:', error);
         setUsers([currentUser]);
-      }
-    });
+      });
     
-    // Listen for session changes (story, reveal state)
-    const unsubscribeSession = onValue(sessionRef, (snapshot) => {
-      const sessionData = snapshot.val();
-      if (sessionData) {
-        setCurrentStory(sessionData.currentStory || '');
-        setIsRevealed(sessionData.isRevealed || false);
-      }
-    });
+      // Listen for users changes
+      const unsubscribeUsers = onValue(usersRef, (snapshot) => {
+        const usersData = snapshot.val();
+        if (usersData) {
+          const usersArray = Object.keys(usersData).map(key => ({
+            ...usersData[key],
+            id: key
+          }));
+          setUsers(usersArray);
+        } else {
+          setUsers([currentUser]);
+        }
+      }, (error) => {
+        console.warn('Firebase users listener failed:', error);
+        setUsers([currentUser]);
+      });
     
-    // Update user's last seen timestamp periodically
-    const heartbeatInterval = setInterval(() => {
-      const heartbeatRef = ref(database, `rooms/${roomCode}/users/${currentUserId}/lastSeen`);
-      set(heartbeatRef, Date.now());
-    }, 30000); // Update every 30 seconds
+      // Listen for session changes (story, reveal state)
+      const unsubscribeSession = onValue(sessionRef, (snapshot) => {
+        const sessionData = snapshot.val();
+        if (sessionData) {
+          setCurrentStory(sessionData.currentStory || '');
+          setIsRevealed(sessionData.isRevealed || false);
+        }
+      }, (error) => {
+        console.warn('Firebase session listener failed:', error);
+      });
     
-    // Cleanup on unmount
-    return () => {
-      unsubscribeUsers();
-      unsubscribeSession();
-      clearInterval(heartbeatInterval);
-      // Remove user from Firebase when leaving
-      remove(ref(database, `rooms/${roomCode}/users/${currentUserId}`));
-    };
+      // Update user's last seen timestamp periodically
+      const heartbeatInterval = setInterval(() => {
+        try {
+          const heartbeatRef = ref(database, `rooms/${roomCode}/users/${currentUserId}/lastSeen`);
+          set(heartbeatRef, Date.now());
+        } catch (error) {
+          console.warn('Heartbeat failed:', error);
+        }
+      }, 30000);
+      
+      // Cleanup on unmount
+      return () => {
+        unsubscribeUsers();
+        unsubscribeSession();
+        clearInterval(heartbeatInterval);
+        // Remove user from Firebase when leaving
+        try {
+          remove(ref(database, `rooms/${roomCode}/users/${currentUserId}`));
+        } catch (error) {
+          console.warn('User cleanup failed:', error);
+        }
+      };
+    } catch (error) {
+      console.warn('Firebase initialization failed:', error);
+      setUsers([currentUser]);
+    }
   }, [currentUserId, userName, roomCode]);
 
   // Calculate if all votes are in
@@ -122,20 +160,62 @@ const Room = ({ roomCode, userName, onLeave }) => {
   const handleCardSelect = (value) => {
     setSelectedCard(value);
     
-    // Update current user's voting status
-    setUsers(prev => prev.map(user => 
-      user.id === currentUserId 
-        ? { ...user, hasVoted: true, selectedCard: value }
-        : user
-    ));
-
+    if (database) {
+      // Update user's vote in Firebase
+      try {
+        const userRef = ref(database, `rooms/${roomCode}/users/${currentUserId}`);
+        set(userRef, {
+          id: currentUserId,
+          name: userName,
+          hasVoted: true,
+          selectedCard: value,
+          isObserver: false,
+          joinedAt: Date.now(),
+          lastSeen: Date.now()
+        });
+      } catch (error) {
+        console.warn('Firebase card select failed:', error);
+        // Fallback to local update
+        setUsers(prev => prev.map(user => 
+          user.id === currentUserId 
+            ? { ...user, hasVoted: true, selectedCard: value }
+            : user
+        ));
+      }
+    } else {
+      // Demo mode - update local state
+      setUsers(prev => prev.map(user => 
+        user.id === currentUserId 
+          ? { ...user, hasVoted: true, selectedCard: value }
+          : user
+      ));
+      
+      // Simulate other demo users voting
+      setTimeout(() => {
+        setUsers(prev => prev.map(user => {
+          if (user.name && user.name.includes('Demo') && !user.hasVoted) {
+            const randomCard = cardValues[Math.floor(Math.random() * (cardValues.length - 2))];
+            return { ...user, hasVoted: true, selectedCard: randomCard };
+          }
+          return user;
+        }));
+      }, 1000 + Math.random() * 2000);
+    }
   };
 
 
 
   const handleReveal = () => {
-    // Update reveal state in Firebase
-    set(ref(database, `rooms/${roomCode}/session/isRevealed`), true);
+    setIsRevealed(true);
+    
+    if (database) {
+      try {
+        // Update reveal state in Firebase
+        set(ref(database, `rooms/${roomCode}/session/isRevealed`), true);
+      } catch (error) {
+        console.warn('Firebase reveal failed:', error);
+      }
+    }
     
     const results = users
       .filter(user => !user.isObserver && user.hasVoted)
@@ -149,24 +229,38 @@ const Room = ({ roomCode, userName, onLeave }) => {
   const handleReset = () => {
     setSelectedCard(null);
     setVotingResults([]);
+    setIsRevealed(false);
     
-    // Reset session state in Firebase
-    set(ref(database, `rooms/${roomCode}/session`), {
-      isRevealed: false,
-      currentStory: currentStory
-    });
-    
-    // Reset all users' votes in Firebase
-    users.forEach(user => {
-      if (user.id) {
-        set(ref(database, `rooms/${roomCode}/users/${user.id}`), {
-          ...user,
-          hasVoted: false,
-          selectedCard: null,
-          lastSeen: Date.now()
+    if (database) {
+      try {
+        // Reset session state in Firebase
+        set(ref(database, `rooms/${roomCode}/session`), {
+          isRevealed: false,
+          currentStory: currentStory
         });
+        
+        // Reset all users' votes in Firebase
+        users.forEach(user => {
+          if (user.id) {
+            set(ref(database, `rooms/${roomCode}/users/${user.id}`), {
+              ...user,
+              hasVoted: false,
+              selectedCard: null,
+              lastSeen: Date.now()
+            });
+          }
+        });
+      } catch (error) {
+        console.warn('Firebase reset failed:', error);
       }
-    });
+    } else {
+      // Demo mode - reset local state
+      setUsers(prev => prev.map(user => ({
+        ...user,
+        hasVoted: false,
+        selectedCard: null
+      })));
+    }
   };
 
   const handleStoryChange = (newStory) => {
@@ -348,7 +442,13 @@ const Room = ({ roomCode, userName, onLeave }) => {
               currentStory={currentStory}
                       onStoryChange={(story) => {
                         setCurrentStory(story);
-                        set(ref(database, `rooms/${roomCode}/session/currentStory`), story);
+                        if (database) {
+                          try {
+                            set(ref(database, `rooms/${roomCode}/session/currentStory`), story);
+                          } catch (error) {
+                            console.warn('Firebase story update failed:', error);
+                          }
+                        }
                       }}
               onReveal={handleReveal}
               onReset={handleReset}
