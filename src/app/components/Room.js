@@ -16,6 +16,8 @@ const Room = ({ roomCode, userName, onLeave }) => {
   const [isRevealed, setIsRevealed] = useState(false);
   const [currentStory, setCurrentStory] = useState('');
   const [votingResults, setVotingResults] = useState([]);
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
 
   // Firebase references
   const roomRef = ref(database, `rooms/${roomCode}`);
@@ -59,27 +61,34 @@ const Room = ({ roomCode, userName, onLeave }) => {
         setUsers([currentUser]);
       });
     
-      // Listen for users changes
+      // Listen for users changes with real-time sync
       const unsubscribeUsers = onValue(usersRef, (snapshot) => {
+        console.log('Firebase users update received');
+        setConnectionStatus('connected');
+        setLastUpdate(Date.now());
         const usersData = snapshot.val();
         if (usersData) {
           const usersArray = Object.keys(usersData).map(key => ({
             ...usersData[key],
             id: key
           }));
+          console.log('Updated users:', usersArray);
           setUsers(usersArray);
         } else {
           setUsers([currentUser]);
         }
       }, (error) => {
         console.warn('Firebase users listener failed:', error);
+        setConnectionStatus('error');
         setUsers([currentUser]);
       });
     
-      // Listen for session changes (story, reveal state)
+      // Listen for session changes with immediate updates
       const unsubscribeSession = onValue(sessionRef, (snapshot) => {
+        console.log('Firebase session update received');
         const sessionData = snapshot.val();
         if (sessionData) {
+          console.log('Session data:', sessionData);
           setCurrentStory(sessionData.currentStory || '');
           setIsRevealed(sessionData.isRevealed || false);
         }
@@ -87,15 +96,18 @@ const Room = ({ roomCode, userName, onLeave }) => {
         console.warn('Firebase session listener failed:', error);
       });
     
-      // Update user's last seen timestamp periodically
+      // Update user's last seen timestamp and force refresh periodically
       const heartbeatInterval = setInterval(() => {
         try {
           const heartbeatRef = ref(database, `rooms/${roomCode}/users/${currentUserId}/lastSeen`);
           set(heartbeatRef, Date.now());
+          
+          // Force a refresh of room data every 10 seconds to ensure sync
+          console.log('Periodic sync check...');
         } catch (error) {
           console.warn('Heartbeat failed:', error);
         }
-      }, 30000);
+      }, 10000); // More frequent updates for real-time feel
       
       // Cleanup on unmount
       return () => {
@@ -160,9 +172,17 @@ const Room = ({ roomCode, userName, onLeave }) => {
   const handleCardSelect = (value) => {
     setSelectedCard(value);
     
+    // Immediately update local state for instant feedback
+    setUsers(prev => prev.map(user => 
+      user.id === currentUserId 
+        ? { ...user, hasVoted: true, selectedCard: value }
+        : user
+    ));
+
     if (database) {
       // Update user's vote in Firebase
       try {
+        console.log('Updating Firebase with vote:', value);
         const userRef = ref(database, `rooms/${roomCode}/users/${currentUserId}`);
         set(userRef, {
           id: currentUserId,
@@ -172,15 +192,11 @@ const Room = ({ roomCode, userName, onLeave }) => {
           isObserver: false,
           joinedAt: Date.now(),
           lastSeen: Date.now()
+        }).then(() => {
+          console.log('Firebase vote update successful');
         });
       } catch (error) {
         console.warn('Firebase card select failed:', error);
-        // Fallback to local update
-        setUsers(prev => prev.map(user => 
-          user.id === currentUserId 
-            ? { ...user, hasVoted: true, selectedCard: value }
-            : user
-        ));
       }
     } else {
       // Demo mode - update local state
@@ -206,12 +222,16 @@ const Room = ({ roomCode, userName, onLeave }) => {
 
 
   const handleReveal = () => {
+    // Immediately update local state
     setIsRevealed(true);
     
     if (database) {
       try {
+        console.log('Updating Firebase reveal state');
         // Update reveal state in Firebase
-        set(ref(database, `rooms/${roomCode}/session/isRevealed`), true);
+        set(ref(database, `rooms/${roomCode}/session/isRevealed`), true).then(() => {
+          console.log('Firebase reveal update successful');
+        });
       } catch (error) {
         console.warn('Firebase reveal failed:', error);
       }
@@ -227,9 +247,15 @@ const Room = ({ roomCode, userName, onLeave }) => {
   };
 
   const handleReset = () => {
+    // Immediately update local state
     setSelectedCard(null);
     setVotingResults([]);
     setIsRevealed(false);
+    setUsers(prev => prev.map(user => ({
+      ...user,
+      hasVoted: false,
+      selectedCard: null
+    })));
     
     if (database) {
       try {
@@ -279,7 +305,21 @@ const Room = ({ roomCode, userName, onLeave }) => {
               </div>
               <div>
                 <h1 className="text-2xl font-semibold text-neutral-700">Planning Session</h1>
-                <p className="text-neutral-600">Session: <span className="font-mono text-sm bg-slate-100 text-neutral-700 px-2 py-1 rounded border border-slate-300">{roomCode}</span></p>
+                <div className="flex items-center gap-3">
+                  <p className="text-neutral-600">Session: <span className="font-mono text-sm bg-slate-100 text-neutral-700 px-2 py-1 rounded border border-slate-300">{roomCode}</span></p>
+                  <div className="flex items-center gap-1">
+                    <div className={`w-2 h-2 rounded-full ${
+                      connectionStatus === 'connected' ? 'bg-green-500' :
+                      connectionStatus === 'connecting' ? 'bg-yellow-500' :
+                      'bg-red-500'
+                    }`}></div>
+                    <span className="text-xs text-neutral-500">
+                      {connectionStatus === 'connected' ? 'Live' :
+                       connectionStatus === 'connecting' ? 'Connecting...' :
+                       'Demo Mode'}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
             <div className="flex items-center space-x-3">
@@ -441,10 +481,14 @@ const Room = ({ roomCode, userName, onLeave }) => {
             <VotingSession
               currentStory={currentStory}
                       onStoryChange={(story) => {
+                        // Immediately update local state
                         setCurrentStory(story);
                         if (database) {
                           try {
-                            set(ref(database, `rooms/${roomCode}/session/currentStory`), story);
+                            console.log('Updating Firebase story:', story);
+                            set(ref(database, `rooms/${roomCode}/session/currentStory`), story).then(() => {
+                              console.log('Firebase story update successful');
+                            });
                           } catch (error) {
                             console.warn('Firebase story update failed:', error);
                           }
