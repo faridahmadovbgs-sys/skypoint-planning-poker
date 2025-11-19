@@ -37,8 +37,12 @@ export default function Home() {
   };
 
   const handleJoinRoom = () => {
+    console.log('Join room clicked:', { userName: userName.trim(), roomCode: roomCode.trim() });
     if (userName.trim() && roomCode.trim()) {
+      console.log('Conditions met, joining room...');
       setCurrentView('room');
+    } else {
+      console.log('Join failed - missing data:', { hasName: !!userName.trim(), hasCode: !!roomCode.trim() });
     }
   };
 
@@ -168,6 +172,26 @@ export default function Home() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-neutral-700 mb-2">
+                    Your Name
+                  </label>
+                  <input
+                    type="text"
+                    value={userName}
+                    onChange={(e) => setUserName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && userName.trim() && roomCode.trim()) {
+                        e.preventDefault();
+                        handleJoinRoom();
+                      }
+                    }}
+                    className="w-full px-3 py-3 border border-neutral-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white shadow-sm text-neutral-900"
+                    placeholder="Enter your name"
+                    autoFocus
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-2">
                     Session Code
                   </label>
                   <input
@@ -175,7 +199,8 @@ export default function Home() {
                     value={roomCode}
                     onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && roomCode.trim() && roomCode.length >= 6) {
+                      if (e.key === 'Enter' && userName.trim() && roomCode.trim() && roomCode.length >= 6) {
+                        e.preventDefault();
                         handleJoinRoom();
                       }
                     }}
@@ -187,10 +212,16 @@ export default function Home() {
                 
                 <button
                   onClick={handleJoinRoom}
-                  disabled={!roomCode.trim() || roomCode.length < 6}
-                  className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 px-4 rounded-md font-semibold hover:from-orange-400 hover:to-orange-500 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 shadow-md"
+                  disabled={!userName.trim() || !roomCode.trim() || roomCode.length < 6}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && userName.trim() && roomCode.trim()) {
+                      e.preventDefault();
+                      handleJoinRoom();
+                    }
+                  }}
+                  className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 px-4 rounded-md font-semibold hover:from-orange-400 hover:to-orange-500 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 shadow-md focus:outline-none focus:ring-2 focus:ring-orange-500"
                 >
-                  Join Session
+                  Join Session (Press Enter)
                 </button>
                 
                 <button
